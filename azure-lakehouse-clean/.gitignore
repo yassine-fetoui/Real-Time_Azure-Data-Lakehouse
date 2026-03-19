@@ -1,0 +1,36 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+
+# dbt
+transformation/dbt/target/
+transformation/dbt/dbt_packages/
+transformation/dbt/logs/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+*.tfvars
+!*.tfvars.example
+
+# Great Expectations
+quality/great_expectations/uncommitted/
+
+# Airflow
+orchestration/airflow/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp

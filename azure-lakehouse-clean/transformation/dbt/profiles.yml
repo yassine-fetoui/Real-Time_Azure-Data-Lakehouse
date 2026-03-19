@@ -1,0 +1,40 @@
+azure_lakehouse:
+  target: dev
+  outputs:
+
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: TRANSFORMER_DEV
+      database: LAKEHOUSE_DEV
+      warehouse: TRANSFORM_WH_DEV
+      schema: dbt_dev
+      threads: 4
+      client_session_keep_alive: false
+
+    ci:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: TRANSFORMER_CI
+      database: LAKEHOUSE_CI
+      warehouse: TRANSFORM_WH_CI
+      schema: dbt_ci
+      threads: 8
+      client_session_keep_alive: false
+
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: TRANSFORMER_PROD
+      database: LAKEHOUSE_PROD
+      warehouse: TRANSFORM_WH_PROD
+      schema: dbt_prod
+      threads: 16
+      client_session_keep_alive: true
+      query_tag: "dbt_prod_run"

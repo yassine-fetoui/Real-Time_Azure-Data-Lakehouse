@@ -1,0 +1,208 @@
+name: CI — Data Quality Gate
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  DBT_PROFILES_DIR: ./transformation/dbt
+  TF_VERSION: "1.6.0"
+
+jobs:
+  # ─────────────────────────────────────────
+  # 1. dbt Tests
+  # ─────────────────────────────────────────
+  dbt-test:
+    name: 🧪 dbt Schema Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt
+        run: |
+          pip install dbt-snowflake==1.7.*
+          dbt --version
+
+      - name: dbt deps
+        working-directory: transformation/dbt
+        run: dbt deps
+
+      - name: dbt compile
+        working-directory: transformation/dbt
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        run: dbt compile --target ci
+
+      - name: dbt test
+        working-directory: transformation/dbt
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        run: dbt test --target ci --store-failures
+
+  # ─────────────────────────────────────────
+  # 2. Great Expectations
+  # ─────────────────────────────────────────
+  great-expectations:
+    name: 📋 Great Expectations Data Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: pip install great-expectations==0.18.*
+
+      - name: Run GE checkpoints
+        working-directory: quality/great_expectations
+        env:
+          SNOWFLAKE_CONN_STR: ${{ secrets.SNOWFLAKE_CONN_STR }}
+        run: |
+          great_expectations checkpoint run staging_checkpoint
+          great_expectations checkpoint run marts_checkpoint
+
+  # ─────────────────────────────────────────
+  # 3. Terraform Validate & Plan
+  # ─────────────────────────────────────────
+  terraform:
+    name: 🏗️ Terraform Validate & Plan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init
+        working-directory: infra/terraform/environments/${{ matrix.environment }}
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=${{ matrix.environment }}/terraform.tfstate"
+
+      - name: Terraform Validate
+        working-directory: infra/terraform/environments/${{ matrix.environment }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: infra/terraform/environments/${{ matrix.environment }}
+        run: |
+          terraform plan \
+            -var-file="${{ matrix.environment }}.tfvars" \
+            -out=tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const output = `#### Terraform Plan (${{ matrix.environment }}) 📖
+            Plan generated. Review before merging.`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+  # ─────────────────────────────────────────
+  # 4. Security Scan
+  # ─────────────────────────────────────────
+  security-scan:
+    name: 🔒 Security Scan (tfsec + checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra/terraform
+
+      - name: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/terraform
+          framework: terraform
+          soft_fail: false
+
+  # ─────────────────────────────────────────
+  # 5. Python Linting
+  # ─────────────────────────────────────────
+  lint:
+    name: 🐍 Python Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linters
+        run: pip install ruff mypy
+
+      - name: ruff lint
+        run: ruff check .
+
+      - name: mypy type check
+        run: mypy processing/ ingestion/ orchestration/
+
+  # ─────────────────────────────────────────
+  # Gate: All checks must pass
+  # ─────────────────────────────────────────
+  quality-gate:
+    name: ✅ Quality Gate
+    needs: [dbt-test, great-expectations, terraform, security-scan, lint]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.dbt-test.result }}" != "success" || \
+                "${{ needs.great-expectations.result }}" != "success" || \
+                "${{ needs.terraform.result }}" != "success" || \
+                "${{ needs.security-scan.result }}" != "success" || \
+                "${{ needs.lint.result }}" != "success" ]]; then
+            echo "❌ Quality gate FAILED — deployment blocked."
+            exit 1
+          fi
+          echo "✅ All checks passed — merge allowed."
