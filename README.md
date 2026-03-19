@@ -19,6 +19,8 @@
 
 ## 📐 Architecture Overview
 
+![Alternative text describing](architecture1.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         REAL-TIME AZURE DATA LAKEHOUSE                      │
