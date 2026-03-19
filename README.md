@@ -261,7 +261,7 @@ dbt test
 ## 👤 Author
 
 **Yassine Fetoui** — Data Engineer & ML Engineer
-- 🔗 [LinkedIn](https://linkedin.com/in/yassine-fetoui)
+- 🔗 [LinkedIn]([https://linkedin.com/in/yassine-fetoui](https://www.linkedin.com/in/yassine-fetoui-a84549384)
 - 🐙 [GitHub](https://github.com/yassine-fetoui)
 - 📧 yfetoui123@gmail.com
 
