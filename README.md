@@ -19,7 +19,7 @@
 
 ## 📐 Architecture Overview
 
-![Alternative text describing](architecture1.png)
+![Alternative text describing](architectureAzure.png)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
